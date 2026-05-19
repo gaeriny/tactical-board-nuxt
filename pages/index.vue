@@ -82,6 +82,10 @@
         </div>
 
         <button @click="enterChannel" class="btn-action enter">🚪 채널 진입하기</button>
+
+        <div v-if="selectedRole === 'manager' && passwordInput" class="danger-zone">
+          <button @click="deleteChannel" class="btn-delete-channel">🗑️ 현재 채널 완전히 삭제하기</button>
+        </div>
       </div>
     </main>
   </div>
@@ -93,8 +97,7 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
-// 상태 제어 변수
-const mode = ref('') // '', 'create', 'enter'
+const mode = ref('') 
 const channelName = ref('')
 const isChannelVerified = ref(false)
 const selectedRole = ref('audience')
@@ -107,13 +110,11 @@ const newChannelPasswords = reactive({
 
 const fetchedPasswords = ref(null)
 
-// 모드 전환 핸들러
 const setMode = (targetMode) => {
   mode.value = targetMode
   goBackClear()
 }
 
-// 초기화 처리
 const goBackClear = () => {
   channelName.value = ''
   isChannelVerified.value = false
@@ -129,7 +130,6 @@ const goBack = () => {
   goBackClear()
 }
 
-// 1. 기존 채널 실존 여부 원격 조회
 const checkChannelExistence = async () => {
   if (!channelName.value) return alert('채널명을 입력해 주세요!')
   
@@ -138,7 +138,6 @@ const checkChannelExistence = async () => {
     const response = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json?_cb=${cacheBuster}`)
     const data = await response.json()
     
-    // 데이터가 있고 올바른 방 구조일 때만 통과
     if (data && data !== 'null' && data.passwords) {
       fetchedPasswords.value = data.passwords
       isChannelVerified.value = true
@@ -152,14 +151,12 @@ const checkChannelExistence = async () => {
   }
 }
 
-// 2. 신규 채널 데이터 생성 바인딩
 const createNewChannel = async () => {
   if (!channelName.value) return alert('개설할 채널 이름을 입력해 주세요!')
   if (!newChannelPasswords.manager || !newChannelPasswords.referee) {
     return alert('감독 및 심판 비밀번호를 모두 지정해야 개설할 수 있습니다!')
   }
 
-  // 중복 개설 방지 실시간 락 체크
   try {
     const checkResp = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`)
     const checkData = await checkResp.json()
@@ -194,17 +191,14 @@ const createNewChannel = async () => {
   }
 }
 
-// 3. 비밀번호 매칭 후 최종 라우팅 권한 진입
 const enterChannel = () => {
   const targetName = String(channelName.value)
 
-  // 관중은 패스워드 프리패스
   if (selectedRole.value === 'audience') {
     router.push(`/match/${targetName}`)
     return
   }
 
-  // 비밀번호 검증 암호 대조
   if (!fetchedPasswords.value || !fetchedPasswords.value[selectedRole.value]) {
     alert('암호 구조가 누락된 방입니다. 강제 입장 처리합니다.')
     router.push(`/match/${targetName}/${selectedRole.value}`)
@@ -217,6 +211,30 @@ const enterChannel = () => {
     alert('❌ 비밀번호가 일치하지 않습니다. 다시 확인해 주세요!')
   }
 }
+
+// 🔥 [추가] 파이어베이스에서 해당 채널을 완전히 폭파시키는 삭제 로직
+const deleteChannel = async () => {
+  if (!fetchedPasswords.value || passwordInput.value !== fetchedPasswords.value.manager) {
+    return alert('❌ 채널을 삭제하려면 올바른 [감독 비밀번호]를 입력해야 합니다.')
+  }
+
+  if (!confirm(`⚠️ 정말로 [${channelName.value}] 채널을 데이터베이스에서 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+    return
+  }
+
+  try {
+    // 파이어베이스 Realtime DB 해당 경로에 DELETE 요청 전송
+    await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`, {
+      method: 'DELETE'
+    })
+    
+    alert(`🗑️ [${channelName.value}] 채널이 파이어베이스 DB에서 완전히 삭제되었습니다.`)
+    goBack() // 삭제 완료 후 첫 메인 화면으로 튕기기
+  } catch (err) {
+    console.error(err)
+    alert('채널 삭제 처리 중 통신 오류가 발생했습니다.')
+  }
+}
 </script>
 
 <style scoped>
@@ -226,14 +244,12 @@ const enterChannel = () => {
 .lobby-header h1 { font-size: 1.4rem; color: #0f172a; margin: 0 0 6px 0; font-weight: 800; }
 .lobby-header .subtitle { font-size: 0.85rem; color: #64748b; margin: 0; }
 
-/* 1단계 메뉴 대형 버튼 선택 창 */
 .menu-selector-card { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 340px; }
 .btn-menu { width: 100%; padding: 20px 0; border: none; border-radius: 14px; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.06); transition: transform 0.1s; }
 .btn-menu:active { transform: scale(0.98); }
 .enter-mode { background: #1e293b; }
 .create-mode { background: #16a34a; }
 
-/* 2단계 공용 카드 템플릿 */
 .lobby-card { background: white; border-radius: 18px; padding: 22px; width: 100%; max-width: 350px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); box-sizing: border-box; }
 .back-zone { margin-bottom: 15px; }
 .btn-back { background: none; border: none; color: #64748b; font-size: 0.8rem; font-weight: bold; cursor: pointer; padding: 0; }
@@ -246,7 +262,6 @@ const enterChannel = () => {
 .btn-primary { background: #2563eb; color: white; border: none; padding: 0 18px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
 .btn-primary:disabled { background: #cbd5e1; cursor: not-allowed; }
 
-/* 승인 통과 존 */
 .verified-zone { border-top: 1px dashed #e2e8f0; margin-top: 16px; padding-top: 16px; }
 .alert-msg { padding: 9px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; margin-bottom: 14px; text-align: center; }
 .alert-msg.success { background: #f0fdf4; color: #166534; }
@@ -259,4 +274,9 @@ const enterChannel = () => {
 .btn-action { width: 100%; padding: 13px 0; border: none; border-radius: 8px; font-weight: bold; font-size: 0.95rem; cursor: pointer; color: white; margin-top: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 .btn-action.enter { background-color: #0f172a; }
 .btn-action.create { background-color: #15803d; }
+
+/* 🚨 위험 구역 (삭제 버튼) 스타일 */
+.danger-zone { border-top: 1px solid #fee2e2; margin-top: 16px; padding-top: 12px; text-align: center; }
+.btn-delete-channel { width: 100%; background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 10px 0; border-radius: 8px; font-size: 0.8rem; font-weight: bold; cursor: pointer; }
+.btn-delete-channel:active { background: #fee2e2; }
 </style>
