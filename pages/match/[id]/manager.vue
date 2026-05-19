@@ -1,58 +1,54 @@
 <template>
   <div class="match-container" v-if="matchData">
     <header class="scoreboard-header">
-      <div class="match-info">
-        <span class="channel-badge m-badge">📋 감독 전술 제어: {{ matchId }}</span>
-        <div class="global-timer">{{ formatTime(matchData.timer || 0) }}</div>
+      <div class="top-row">
+        <span class="mode-badge">📋 감독 전술 제어: {{ matchId }}</span>
+        <div class="timer-display">{{ formatTime(matchData.timer || 0) }}</div>
       </div>
       
-      <div class="live-score-zone">
-        <div class="team-block home">
-          <span class="team-name">{{ matchData.teamNames?.home || 'HOME' }}</span>
-          <span class="score-display">{{ matchData.scores?.home || 0 }}</span>
+      <div class="score-row">
+        <div class="team home">
+          <span class="name">{{ matchData.teamNames?.home || 'HOME' }}</span>
+          <span class="score">{{ matchData.scores?.home || 0 }}</span>
         </div>
-        <div class="score-vs">VS</div>
-        <div class="team-block away">
-          <span class="score-display">{{ matchData.scores?.away || 0 }}</span>
-          <span class="team-name">{{ matchData.teamNames?.away || 'AWAY' }}</span>
+        <div class="vs">vs</div>
+        <div class="team away">
+          <span class="score">{{ matchData.scores?.away || 0 }}</span>
+          <span class="name">{{ matchData.teamNames?.away || 'AWAY' }}</span>
         </div>
       </div>
     </header>
 
-    <section class="manager-toolbar">
-      <button @click="addPlayer" class="btn-add-player">➕ 전술판 선수 추가</button>
-      <button @click="clearPlayers" class="btn-clear-player">🗑️ 선수 전체 초기화</button>
+    <section class="toolbar">
+      <button @click="addPlayer" class="btn-blue">➕ 전술판 선수 추가</button>
+      <button @click="clearPlayers" class="btn-gray">🗑️ 선수 전체 초기화</button>
     </section>
 
-    <main class="tactics-zone" @mousemove="dragPlayer" @mouseup="stopDrag" @mouseleave="stopDrag">
-      <div class="pitch-board" ref="pitchRef">
-        <div class="pitch-line center-circle"></div>
-        <div class="pitch-line center-line"></div>
+    <main class="pitch-container" @mousemove="dragPlayer" @mouseup="stopDrag" @mouseleave="stopDrag">
+      <div class="pitch" ref="pitchRef">
+        <div class="center-line"></div>
+        <div class="center-circle"></div>
         
         <div 
           v-for="(player, index) in matchData.players" 
           :key="player.id"
-          class="player-token draggable"
+          class="player-token"
           :style="{ left: player.x + '%', top: player.y + '%' }"
           @mousedown="startDrag($event, index)"
         >
-          <span class="player-number">{{ player.number || (index + 1) }}</span>
+          <div class="token-circle">{{ player.number || (index + 1) }}</div>
           <input 
             type="text" 
             v-model="player.name" 
             @change="saveChanges" 
-            class="player-name-input"
+            class="name-edit-input"
             placeholder="이름"
             @mousedown.stop
           />
-          <button class="btn-delete-player" @mousedown.stop @click="deletePlayer(index)">×</button>
+          <button class="btn-del" @mousedown.stop @click="deletePlayer(index)">×</button>
         </div>
       </div>
     </main>
-  </div>
-  
-  <div v-else class="loading-state">
-    <p>감독 전술 대시보드 권한을 동기화 중입니다...</p>
   </div>
 </template>
 
@@ -63,11 +59,9 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 const matchId = route.params.id
 
-// 파이어베이스 실시간 컴포저블 바인딩 (수정 데이터 푸시 권한 탑재)
 const { matchData, saveToServer } = useMatchFirebase(matchId)
-
 const pitchRef = ref(null)
-let activePlayerIndex = null
+let activeIndex = null
 
 const formatTime = (seconds) => {
   const mins = String(Math.floor(seconds / 60)).padStart(2, '0')
@@ -79,7 +73,6 @@ const saveChanges = () => {
   if (saveToServer) saveToServer()
 }
 
-// 👤 신규 선수 배치 토큰 생성
 const addPlayer = () => {
   if (!matchData.value) return
   if (!matchData.value.players) matchData.value.players = []
@@ -94,89 +87,64 @@ const addPlayer = () => {
   saveChanges()
 }
 
-// 👤 선수 삭제 개별 로직
 const deletePlayer = (index) => {
-  if (!matchData.value?.players) return
   matchData.value.players.splice(index, 1)
   saveChanges()
 }
 
-// 👤 선수 리스트 전체 초기화
 const clearPlayers = () => {
-  if (!confirm('전술판 위의 모든 선수를 제거하시겠습니까?')) return
+  if (!confirm('모든 선수를 초기화하시겠습니까?')) return
   if (matchData.value) {
     matchData.value.players = []
     saveChanges()
   }
 }
 
-// ↕️ 드래그앤드롭 좌표 제어 핸들러
-const startDrag = (event, index) => {
-  activePlayerIndex = index
-}
-
-const dragPlayer = (event) => {
-  if (activePlayerIndex === null || !pitchRef.value || !matchData.value?.players) return
-  
+const startDrag = (e, index) => { activeIndex = index }
+const dragPlayer = (e) => {
+  if (activeIndex === null || !pitchRef.value) return
   const rect = pitchRef.value.getBoundingClientRect()
-  // 전체 축 기준 백분율(%) 마우스 마스킹 연산
-  let x = ((event.clientX - rect.left) / rect.width) * 100
-  let y = ((event.clientY - rect.top) / rect.height) * 100
+  let x = ((e.clientX - rect.left) / rect.width) * 100
+  let y = ((e.clientY - rect.top) / rect.height) * 100
 
-  // 전술판 경계선 탈출 방지 바운딩 가드 코드
-  if (x < 2) x = 2
-  if (x > 98) x = 98
-  if (y < 3) y = 3
-  if (y > 97) y = 97
+  if (x < 3) x = 3; if (x > 97) x = 97
+  if (y < 3) y = 3; if (y > 97) y = 97
 
-  matchData.value.players[activePlayerIndex].x = Math.round(x)
-  matchData.value.players[activePlayerIndex].y = Math.round(y)
+  matchData.value.players[activeIndex].x = Math.round(x)
+  matchData.value.players[activeIndex].y = Math.round(y)
 }
-
 const stopDrag = () => {
-  if (activePlayerIndex !== null) {
-    activePlayerIndex = null
-    saveChanges() // 마우스를 놓는 즉시 파이어베이스에 위치 확정 동기화
-  }
+  if (activeIndex !== null) { activeIndex = null; saveChanges(); }
 }
 </script>
 
 <style scoped>
-/* 관중 뷰와 공유 디자인 톤 연동 */
-.match-container { max-width: 800px; margin: 0 auto; padding: 16px; font-family: sans-serif; background-color: #f1f5f9; min-height: 100vh; }
-.scoreboard-header { background: #1e293b; color: white; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 12px; }
-.match-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #475569; padding-bottom: 8px; }
-.channel-badge.m-badge { background: #0284c7; color: white; font-weight: bold; }
-.global-timer { font-size: 1.8rem; font-weight: 800; font-family: monospace; color: #f43f5e; letter-spacing: 1px; }
+.match-container { width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #f0f2f5; overflow: hidden; box-sizing: border-box; padding: 10px; }
+.scoreboard-header { background: #1a2332; border-radius: 16px; padding: 12px 16px; color: white; margin-bottom: 8px; }
+.top-row { display: flex; justify-content: space-between; align-items: center; }
+.mode-badge { font-size: 0.75rem; background: #0284c7; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
+.timer-display { font-size: 1.8rem; font-weight: bold; font-family: monospace; color: #ff4d6d; }
+.score-row { display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 2px; }
+.team { display: flex; align-items: center; gap: 12px; flex: 1; }
+.team.home { justify-content: flex-end; }
+.team.away { justify-content: flex-start; }
+.name { font-size: 1.1rem; font-weight: bold; color: #94a3b8; }
+.score { font-size: 2.2rem; font-weight: 800; }
+.vs { font-size: 0.85rem; color: #475569; font-weight: bold; }
 
-.live-score-zone { display: flex; align-items: center; justify-content: center; gap: 24px; padding: 4px 0; }
-.team-block { display: flex; align-items: center; gap: 16px; flex: 1; }
-.team-block.home { justify-content: flex-end; }
-.team-block.away { justify-content: flex-start; }
-.team-name { font-size: 1.2rem; font-weight: 700; color: #94a3b8; }
-.score-display { font-size: 2.5rem; font-weight: 800; color: white; }
-.score-vs { font-size: 1rem; font-weight: bold; color: #475569; }
+/* 🛠️ 버튼 툴바 스크린샷 10번 복사 */
+.toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+.toolbar button { flex: 1; padding: 10px 0; border: none; border-radius: 8px; font-weight: bold; font-size: 0.85rem; cursor: pointer; }
+.btn-blue { background: #3b82f6; color: white; }
+.btn-gray { background: #e2e8f0; color: #475569; }
 
-/* 툴바 컨트롤 스타일 */
-.manager-toolbar { display: flex; gap: 10px; margin-bottom: 12px; }
-.manager-toolbar button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: bold; font-size: 0.85rem; cursor: pointer; }
-.btn-add-player { background: #0284c7; color: white; }
-.btn-clear-player { background: #e2e8f0; color: #475569; }
+.pitch-container { flex: 1; background: white; border-radius: 16px; overflow: hidden; padding: 6px; box-sizing: border-box; }
+.pitch { width: 100%; height: 100%; background: #2c4c38; border-radius: 12px; position: relative; border: 2px solid rgba(255,255,255,0.4); }
+.center-line { position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: rgba(255,255,255,0.4); }
+.center-circle { position: absolute; top: 50%; left: 50%; width: 70px; height: 70px; border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; transform: translate(-50%, -50%); }
 
-/* 작전 경기장 */
-.tactics-zone { background: #1b4332; border: 4px solid #fff; border-radius: 12px; height: 450px; position: relative; overflow: hidden; box-shadow: inset 0 0 40px rgba(0,0,0,0.5); cursor: crosshair; }
-.pitch-board { width: 100%; height: 100%; position: relative; }
-.center-line { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.4); }
-.center-circle { position: absolute; left: 50%; top: 50%; width: 100px; height: 100px; border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; transform: translate(-50%, -50%); }
-
-/* 감독 드래그 전용 선수 토큰 디자인 */
-.player-token { position: absolute; width: 34px; height: 34px; background: #3b82f6; border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.85rem; box-shadow: 0 6px 12px rgba(0,0,0,0.3); cursor: grab; user-select: none; }
-.player-token:active { cursor: grabbing; background: #2563eb; transform: translate(-50%, -50%) scale(1.1); }
-
-.player-name-input { position: absolute; bottom: -24px; width: 60px; background: rgba(15, 23, 42, 0.85); border: 1px solid #475569; color: white; font-size: 0.7rem; text-align: center; border-radius: 4px; padding: 2px 0; font-weight: normal; }
-.player-name-input:focus { background: white; color: black; outline: none; }
-
-.btn-delete-player { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; background: #ef4444; color: white; border: none; border-radius: 50%; font-size: 0.65rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; }
-
-.loading-state { text-align: center; padding: 60px; color: #64748b; font-size: 0.9rem; }
+.player-token { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; cursor: grab; }
+.token-circle { width: 26px; height: 26px; background: #3b82f6; border: 2px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+.name-edit-input { width: 50px; background: rgba(0,0,0,0.8); border: none; color: white; font-size: 0.65rem; text-align: center; border-radius: 3px; margin-top: 2px; padding: 1px 0; }
+.btn-del { position: absolute; top: -5px; right: -5px; width: 14px; height: 14px; background: #ef4444; color: white; border: none; border-radius: 50%; font-size: 0.6rem; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; }
 </style>
