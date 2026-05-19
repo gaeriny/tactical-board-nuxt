@@ -64,6 +64,8 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import { useNuxtApp } from '#app'
+import { ref as dbRef, get, set } from 'firebase/database'
 
 const router = useRouter()
 const channelName = ref('')
@@ -76,36 +78,47 @@ const newChannelPasswords = reactive({
   referee: ''
 })
 
-// 안전하게 데이터를 가둘 가상 채널 ID와 컴포저블 선언
-const targetId = ref('__LOBBY_INIT__')
-const { matchData, saveToServer } = useMatchFirebase(targetId)
+// 조회해온 방의 패스워드 메타데이터를 저장할 변수
+const fetchedPasswords = ref(null)
 
-// 1. 채널이 실제로 존재하는지 체크 (기존 useMatchFirebase 인스턴스를 무조건 경유)
-const checkChannelExistence = () => {
+// 💡 프로젝트에 이미 세팅되어 검증된 Firebase Database 인스턴스를 Nuxt 컨텍스트에서 직접 안전하게 추출합니다.
+const getDatabaseInstance = () => {
+  const nuxtApp = useNuxtApp()
+  // 프로젝트 세팅에 따라 $db 또는 $database로 주입되어 있으므로 순차 추적
+  return nuxtApp.$db || nuxtApp.$database
+}
+
+// 1. 단발성 데이터베이스 주소 조회 핸들러 (500 에러 원천 해결)
+const checkChannelExistence = async () => {
   if (!channelName.value) return alert('채널명을 입력해 주세요!')
   
-  // 원래 쓰시던 useMatchFirebase의 내부 state를 수동 조회하기 위해 ID 스위칭
-  targetId.value = channelName.value
+  try {
+    const db = getDatabaseInstance()
+    if (!db) throw new Error('Firebase 데이터베이스 인스턴스를 찾을 수 없습니다.')
 
-  // Firebase 실시간 동기화 응답을 기다리기 위한 짧은 딜레이 부여
-  setTimeout(() => {
-    // 이미 존재하는 방이라면 내부에 채널 전용 스포츠 정보 등이 찍혀있음
-    if (matchData.value && (matchData.value.currentSport || matchData.value.scores)) {
+    // [핵심 교정] 객체가 아닌 정제된 순수 스트링값(channelName.value)을 다이렉트로 매핑하여 invalid path 에러 유발을 방지합니다.
+    const snapshot = await get(dbRef(db, `matches/${channelName.value}`))
+    
+    if (snapshot.exists()) {
+      const data = snapshot.val()
+      fetchedPasswords.value = data.passwords || null
       channelStatus.value = 'exists'
     } else {
       channelStatus.value = 'new'
     }
-  }, 800) // 배포 서버의 지연을 감안해 0.8초 부여
+  } catch (err) {
+    console.error(err)
+    alert('채널 확인 중 문제가 발생했습니다. 기존 방 주소로 직접 진입을 시도해 보세요.')
+  }
 }
 
-// 2. 신규 채널 생성 로직
-const createNewChannel = () => {
+// 2. 신규 채널 인스턴스 초기화 및 Firebase 적재 로직
+const createNewChannel = async () => {
   if (!newChannelPasswords.manager || !newChannelPasswords.referee) {
     return alert('감독 및 심판 비밀번호를 모두 지정해야 채널 개설이 가능합니다!')
   }
 
-  // 기존 테이블 구조 유지 + 보안 비번 구조화
-  matchData.value = {
+  const initialSchema = {
     currentSport: 'soccer',
     scores: { home: 0, away: 0 },
     teamNames: { home: 'HOME', away: 'AWAY' },
@@ -116,31 +129,30 @@ const createNewChannel = () => {
     }
   }
 
-  // 기존 컴포저블에 있던 안전한 저장 로직 구동
-  saveToServer()
-  
-  alert(`🎉 [${channelName.value}] 채널이 개설되었습니다! 관중 모드로 진입합니다.`)
-  router.push(`/match/${channelName.value}`)
+  try {
+    const db = getDatabaseInstance()
+    await set(dbRef(db, `matches/${channelName.value}`), initialSchema)
+    alert(`🎉 [${channelName.value}] 채널이 개설되었습니다! 관중 모드로 입장합니다.`)
+    router.push(`/match/${channelName.value}`)
+  } catch (err) {
+    alert('채널 생성에 실패했습니다: ' + err.message)
+  }
 }
 
-// 3. 비밀번호 대조 및 입장 처리
+// 3. 권한별 비밀번호 검증 처리 라우터 기동
 const enterChannel = () => {
   if (selectedRole.value === 'audience') {
     router.push(`/match/${channelName.value}`)
     return
   }
 
-  const savedPasswords = matchData.value?.passwords
-
-  // 이전에 비밀번호 없이 임시로 개설해둔 기존 방(test1 등) 예외 허용 처리
-  if (!savedPasswords || !savedPasswords[selectedRole.value]) {
-    alert('이 채널은 보안 암호가 설정되지 않은 이전 방입니다. 암호 없이 입장합니다.')
+  if (!fetchedPasswords.value || !fetchedPasswords.value[selectedRole.value]) {
+    alert('이 채널은 초기 보안 설정이 생략된 방입니다. 비밀번호 없이 입장합니다.')
     router.push(`/match/${channelName.value}/${selectedRole.value}`)
     return
   }
 
-  // 비밀번호가 정확할 때만 각 역할에 맞는 서브 패스로 할당 라우팅
-  if (passwordInput.value === savedPasswords[selectedRole.value]) {
+  if (passwordInput.value === fetchedPasswords.value[selectedRole.value]) {
     router.push(`/match/${channelName.value}/${selectedRole.value}`)
   } else {
     alert('❌ 비밀번호가 올바르지 않습니다. 다시 확인해 주세요.')
