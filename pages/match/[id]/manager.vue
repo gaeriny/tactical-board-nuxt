@@ -16,10 +16,15 @@
     </div>
   </div>
 </template>
-
 <script setup>
+import { useRoute } from 'vue-router'
+import TacticalBoard from '@/components/TacticalBoard.vue'
+
 const matchId = useRoute().params.id
 const { matchData, saveToServer } = useMatchFirebase(matchId)
+
+// ... 하단 로직(toggleSport, putOnPitch 등)은 기존 그대로 유지 ...
+</script>
 
 const toggleSport = (sport) => {
   matchData.value.currentSport = sport
