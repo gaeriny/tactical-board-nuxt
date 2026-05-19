@@ -1,27 +1,27 @@
 <template>
-  <div class="match-container" v-if="matchData && Object.keys(matchData).length > 0">
+  <div class="match-container">
     <header class="scoreboard-header">
       <div class="top-row">
         <span class="mode-badge">📋 감독 전술 제어: {{ matchId }}</span>
-        <div class="timer-display">{{ formatTime(matchData.timer || 0) }}</div>
+        <div class="timer-display">{{ formatTime(matchData?.timer || 0) }}</div>
       </div>
       
       <div class="score-row">
         <div class="team home">
-          <span class="name">{{ matchData.teamNames?.home || 'HOME' }}</span>
-          <span class="score">{{ matchData.scores?.home || 0 }}</span>
+          <span class="name">{{ matchData?.teamNames?.home || 'HOME' }}</span>
+          <span class="score">{{ matchData?.scores?.home || 0 }}</span>
         </div>
         <div class="vs">vs</div>
         <div class="team away">
-          <span class="score">{{ matchData.scores?.away || 0 }}</span>
-          <span class="name">{{ matchData.teamNames?.away || 'AWAY' }}</span>
+          <span class="score">{{ matchData?.scores?.away || 0 }}</span>
+          <span class="name">{{ matchData?.teamNames?.away || 'AWAY' }}</span>
         </div>
       </div>
     </header>
 
     <section class="toolbar">
-      <button @click="addPlayer" class="btn-blue">➕ 전술판 선수 추가</button>
-      <button @click="clearPlayers" class="btn-gray">🗑️ 선수 전체 초기화</button>
+      <button @click="addPlayer" class="btn-blue" :disabled="!matchData">➕ 전술판 선수 추가</button>
+      <button @click="clearPlayers" class="btn-gray" :disabled="!matchData">🗑️ 선수 전체 초기화</button>
     </section>
 
     <main 
@@ -37,7 +37,7 @@
         <div class="center-circle"></div>
         
         <div 
-          v-for="(player, index) in matchData.players || []" 
+          v-for="(player, index) in matchData?.players || []" 
           :key="player.id"
           class="player-token"
           :style="{ left: (player.x ?? 50) + '%', top: (player.y ?? 50) + '%' }"
@@ -58,10 +58,10 @@
         </div>
       </div>
     </main>
-  </div>
-  <div v-else class="loading-state">
-    <div class="spinner"></div>
-    <p>감독 제어 대시보드를 구축 중입니다...</p>
+
+    <div v-if="!matchData" class="mini-loading-bar">
+      📡 실시간 서버 연결을 기다리는 중입니다...
+    </div>
   </div>
 </template>
 
@@ -114,7 +114,6 @@ const clearPlayers = () => {
   }
 }
 
-// 마우스 드래그 핸들러
 const startDrag = (e, index) => { activeIndex = index }
 const dragPlayer = (e) => {
   if (activeIndex === null || !pitchRef.value) return
@@ -122,7 +121,6 @@ const dragPlayer = (e) => {
   updateCoordinates(e.clientX, e.clientY, rect)
 }
 
-// 모바일 터치 드래그 핸들러 추가
 const startDragTouch = (e, index) => { activeIndex = index }
 const dragPlayerTouch = (e) => {
   if (activeIndex === null || !pitchRef.value) return
@@ -150,7 +148,8 @@ const stopDrag = () => {
 </script>
 
 <style scoped>
-.match-container { width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #f0f2f5; overflow: hidden; box-sizing: border-box; padding: 10px; }
+/* 구조는 기존 스타일 유지 */
+.match-container { width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #f0f2f5; overflow: hidden; box-sizing: border-box; padding: 10px; position: relative; }
 .scoreboard-header { background: #1a2332; border-radius: 16px; padding: 12px 16px; color: white; margin-bottom: 8px; }
 .top-row { display: flex; justify-content: space-between; align-items: center; }
 .mode-badge { font-size: 0.75rem; background: #0284c7; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
@@ -165,6 +164,7 @@ const stopDrag = () => {
 
 .toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
 .toolbar button { flex: 1; padding: 10px 0; border: none; border-radius: 8px; font-weight: bold; font-size: 0.85rem; cursor: pointer; }
+.toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-blue { background: #3b82f6; color: white; }
 .btn-gray { background: #e2e8f0; color: #475569; }
 
@@ -178,7 +178,5 @@ const stopDrag = () => {
 .name-edit-input { width: 50px; background: rgba(0,0,0,0.8); border: none; color: white; font-size: 0.65rem; text-align: center; border-radius: 3px; margin-top: 2px; padding: 1px 0; }
 .btn-del { position: absolute; top: -5px; right: -5px; width: 14px; height: 14px; background: #ef4444; color: white; border: none; border-radius: 50%; font-size: 0.6rem; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; }
 
-.loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: #f0f2f5; color: #64748b; font-size: 0.9rem; }
-.spinner { width: 30px; height: 30px; border: 3px solid #cbd5e1; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s infinite linear; margin-bottom: 12px; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.mini-loading-bar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.8); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.8rem; pointer-events: none; z-index: 10; }
 </style>
