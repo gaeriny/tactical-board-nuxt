@@ -97,6 +97,9 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
+// 💡 실시간 DB 주소 정의 (싱가포르 리전 주소 반영)
+const DB_BASE_URL = 'https://jungjin-test-tactics-board-default-rtdb.asia-southeast1.firebasedatabase.app'
+
 const mode = ref('') 
 const channelName = ref('')
 const isChannelVerified = ref(false)
@@ -130,12 +133,14 @@ const goBack = () => {
   goBackClear()
 }
 
+// 1. 기존 채널 실존 여부 원격 조회
 const checkChannelExistence = async () => {
   if (!channelName.value) return alert('채널명을 입력해 주세요!')
   
   try {
     const cacheBuster = Date.now()
-    const response = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json?_cb=${cacheBuster}`)
+    // 💡 올바른 아시아 리전 URL로 조회 요청
+    const response = await fetch(`${DB_BASE_URL}/matches/${channelName.value}.json?_cb=${cacheBuster}`)
     const data = await response.json()
     
     if (data && data !== 'null' && data.passwords) {
@@ -151,6 +156,7 @@ const checkChannelExistence = async () => {
   }
 }
 
+// 2. 신규 채널 데이터 생성 바인딩
 const createNewChannel = async () => {
   if (!channelName.value) return alert('개설할 채널 이름을 입력해 주세요!')
   if (!newChannelPasswords.manager || !newChannelPasswords.referee) {
@@ -158,7 +164,7 @@ const createNewChannel = async () => {
   }
 
   try {
-    const checkResp = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`)
+    const checkResp = await fetch(`${DB_BASE_URL}/matches/${channelName.value}.json`)
     const checkData = await checkResp.json()
     if (checkData && checkData !== 'null') {
       return alert('⚠️ 이미 존재하는 채널명입니다. 다른 이름을 사용해 주세요.')
@@ -180,7 +186,7 @@ const createNewChannel = async () => {
   const targetName = String(channelName.value)
 
   try {
-    await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${targetName}.json`, {
+    await fetch(`${DB_BASE_URL}/matches/${targetName}.json`, {
       method: 'PUT',
       body: JSON.stringify(initialSchema)
     })
@@ -191,6 +197,7 @@ const createNewChannel = async () => {
   }
 }
 
+// 3. 채널 진입
 const enterChannel = () => {
   const targetName = String(channelName.value)
 
@@ -212,7 +219,7 @@ const enterChannel = () => {
   }
 }
 
-// 🔥 [추가] 파이어베이스에서 해당 채널을 완전히 폭파시키는 삭제 로직
+// 4. 파이어베이스에서 채널 삭제
 const deleteChannel = async () => {
   if (!fetchedPasswords.value || passwordInput.value !== fetchedPasswords.value.manager) {
     return alert('❌ 채널을 삭제하려면 올바른 [감독 비밀번호]를 입력해야 합니다.')
@@ -223,13 +230,12 @@ const deleteChannel = async () => {
   }
 
   try {
-    // 파이어베이스 Realtime DB 해당 경로에 DELETE 요청 전송
-    await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`, {
+    await fetch(`${DB_BASE_URL}/matches/${channelName.value}.json`, {
       method: 'DELETE'
     })
     
     alert(`🗑️ [${channelName.value}] 채널이 파이어베이스 DB에서 완전히 삭제되었습니다.`)
-    goBack() // 삭제 완료 후 첫 메인 화면으로 튕기기
+    goBack()
   } catch (err) {
     console.error(err)
     alert('채널 삭제 처리 중 통신 오류가 발생했습니다.')
@@ -275,7 +281,6 @@ const deleteChannel = async () => {
 .btn-action.enter { background-color: #0f172a; }
 .btn-action.create { background-color: #15803d; }
 
-/* 🚨 위험 구역 (삭제 버튼) 스타일 */
 .danger-zone { border-top: 1px solid #fee2e2; margin-top: 16px; padding-top: 12px; text-align: center; }
 .btn-delete-channel { width: 100%; background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 10px 0; border-radius: 8px; font-size: 0.8rem; font-weight: bold; cursor: pointer; }
 .btn-delete-channel:active { background: #fee2e2; }
