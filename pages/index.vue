@@ -1,287 +1,85 @@
 <template>
-  <div class="lobby-container">
-    <header class="lobby-header">
-      <div class="logo">🏟️</div>
-      <h1>실시간 경기 전술 대시보드</h1>
-      <p class="subtitle">원하시는 작업을 선택해 주세요.</p>
+  <div class="match-container" v-if="matchData && Object.keys(matchData).length > 0">
+    <header class="scoreboard-header">
+      <div class="top-row">
+        <span class="mode-badge">📺 관중 모드: {{ matchId }}</span>
+        <div class="timer-display">{{ formatTime(matchData.timer || 0) }}</div>
+      </div>
+      
+      <div class="score-row">
+        <div class="team home">
+          <span class="name">{{ matchData.teamNames?.home || 'HOME' }}</span>
+          <span class="score">{{ matchData.scores?.home || 0 }}</span>
+        </div>
+        <div class="vs">vs</div>
+        <div class="team away">
+          <span class="score">{{ matchData.scores?.away || 0 }}</span>
+          <span class="name">{{ matchData.teamNames?.away || 'AWAY' }}</span>
+        </div>
+      </div>
     </header>
 
-    <div v-if="mode === ''" class="menu-selector-card">
-      <button @click="setMode('enter')" class="btn-menu enter-mode">🚪 기존 채널 입장하기</button>
-      <button @click="setMode('create')" class="btn-menu create-mode">➕ 새로운 채널 개설하기</button>
-    </div>
-
-    <main v-else-if="mode === 'create'" class="lobby-card">
-      <div class="back-zone">
-        <button @click="goBack" class="btn-back">⬅️ 처음으로</button>
-      </div>
-
-      <div class="input-group">
-        <label>📌 개설할 채널 이름</label>
-        <input 
-          type="text" 
-          v-model.trim="channelName" 
-          placeholder="예: test1, my-match"
-          class="normal-input"
-        />
-      </div>
-
-      <div class="input-group">
-        <label>📋 감독용 패스워드 설정</label>
-        <input type="password" v-model="newChannelPasswords.manager" placeholder="감독 진입용 암호" class="normal-input" />
-      </div>
-
-      <div class="input-group">
-        <label>📯 심판용 패스워드 설정</label>
-        <input type="password" v-model="newChannelPasswords.referee" placeholder="심판 진입용 암호" class="normal-input" />
-      </div>
-
-      <button @click="createNewChannel" class="btn-action create">✨ 경기 채널 신규 개설</button>
-    </main>
-
-    <main v-else-if="mode === 'enter'" class="lobby-card">
-      <div class="back-zone">
-        <button @click="goBack" class="btn-back">⬅️ 처음으로</button>
-      </div>
-
-      <div class="input-group">
-        <label>📌 입장할 채널 이름</label>
-        <div class="search-box">
-          <input 
-            type="text" 
-            v-model.trim="channelName" 
-            placeholder="채널명을 입력하세요"
-            @keyup.enter="checkChannelExistence"
-            :disabled="isChannelVerified"
-          />
-          <button @click="checkChannelExistence" class="btn-primary" :disabled="isChannelVerified">조회</button>
-        </div>
-      </div>
-
-      <div v-if="isChannelVerified" class="verified-zone">
-        <div class="alert-msg success">🟢 [{{ channelName }}] 채널이 확인되었습니다.</div>
+    <main class="pitch-container">
+      <div class="pitch">
+        <div class="center-line"></div>
+        <div class="center-circle"></div>
         
-        <div class="role-selector">
-          <label>진입 권한 선택</label>
-          <div class="role-btns">
-            <button @click="selectedRole = 'audience'" :class="{ active: selectedRole === 'audience' }">📺 관중 뷰</button>
-            <button @click="selectedRole = 'manager'" :class="{ active: selectedRole === 'manager' }">📋 감독 뷰</button>
-            <button @click="selectedRole = 'referee'" :class="{ active: selectedRole === 'referee' }">📯 심판 뷰</button>
-          </div>
-        </div>
-
-        <div v-if="selectedRole !== 'audience'" class="input-group">
-          <label>🔑 해당 권한 비밀번호 입력</label>
-          <input 
-            type="password" 
-            v-model="passwordInput" 
-            placeholder="비밀번호를 입력하세요" 
-            @keyup.enter="enterChannel" 
-            class="normal-input"
-          />
-        </div>
-
-        <button @click="enterChannel" class="btn-action enter">🚪 채널 진입하기</button>
-
-        <div v-if="selectedRole === 'manager' && passwordInput" class="danger-zone">
-          <button @click="deleteChannel" class="btn-delete-channel">🗑️ 현재 채널 완전히 삭제하기</button>
+        <div 
+          v-for="player in matchData.players || []" 
+          :key="player.id"
+          class="player-token"
+          :style="{ left: (player.x ?? 50) + '%', top: (player.y ?? 50) + '%' }"
+        >
+          <div class="token-circle">{{ player.number || '?' }}</div>
+          <div class="token-name">{{ player.name || '선수' }}</div>
         </div>
       </div>
     </main>
   </div>
+  <div v-else class="loading-state">
+    <div class="spinner"></div>
+    <p>실시간 전술 보드 데이터를 가져오고 있습니다...</p>
+  </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
+const route = useRoute()
+const matchId = route.params.id
 
-const router = useRouter()
+const { matchData } = useMatchFirebase(matchId)
 
-// 💡 실시간 DB 주소 정의 (싱가포르 리전 주소 반영)
-const DB_BASE_URL = 'https://jungjin-test-tactics-board-default-rtdb.asia-southeast1.firebasedatabase.app'
-
-const mode = ref('') 
-const channelName = ref('')
-const isChannelVerified = ref(false)
-const selectedRole = ref('audience')
-const passwordInput = ref('')
-
-const newChannelPasswords = reactive({
-  manager: '',
-  referee: ''
-})
-
-const fetchedPasswords = ref(null)
-
-const setMode = (targetMode) => {
-  mode.value = targetMode
-  goBackClear()
-}
-
-const goBackClear = () => {
-  channelName.value = ''
-  isChannelVerified.value = false
-  selectedRole.value = 'audience'
-  passwordInput.value = ''
-  newChannelPasswords.manager = ''
-  newChannelPasswords.referee = ''
-  fetchedPasswords.value = null
-}
-
-const goBack = () => {
-  mode.value = ''
-  goBackClear()
-}
-
-// 1. 기존 채널 실존 여부 원격 조회
-const checkChannelExistence = async () => {
-  if (!channelName.value) return alert('채널명을 입력해 주세요!')
-  
-  try {
-    const cacheBuster = Date.now()
-    // 💡 올바른 아시아 리전 URL로 조회 요청
-    const response = await fetch(`${DB_BASE_URL}/matches/${channelName.value}.json?_cb=${cacheBuster}`)
-    const data = await response.json()
-    
-    if (data && data !== 'null' && data.passwords) {
-      fetchedPasswords.value = data.passwords
-      isChannelVerified.value = true
-    } else {
-      alert('❌ 존재하지 않는 채널입니다. 채널명을 다시 확인하시거나 새로 개설해 주세요.')
-      isChannelVerified.value = false
-    }
-  } catch (err) {
-    console.error(err)
-    alert('채널 조회 중 통신 오류가 발생했습니다.')
-  }
-}
-
-// 2. 신규 채널 데이터 생성 바인딩
-const createNewChannel = async () => {
-  if (!channelName.value) return alert('개설할 채널 이름을 입력해 주세요!')
-  if (!newChannelPasswords.manager || !newChannelPasswords.referee) {
-    return alert('감독 및 심판 비밀번호를 모두 지정해야 개설할 수 있습니다!')
-  }
-
-  try {
-    const checkResp = await fetch(`${DB_BASE_URL}/matches/${channelName.value}.json`)
-    const checkData = await checkResp.json()
-    if (checkData && checkData !== 'null') {
-      return alert('⚠️ 이미 존재하는 채널명입니다. 다른 이름을 사용해 주세요.')
-    }
-  } catch (e) {}
-
-  const initialSchema = {
-    scores: { home: 0, away: 0 },
-    teamNames: { home: 'HOME', away: 'AWAY' },
-    timer: 0,
-    isTiming: false,
-    passwords: {
-      manager: newChannelPasswords.manager,
-      referee: newChannelPasswords.referee
-    },
-    players: []
-  }
-
-  const targetName = String(channelName.value)
-
-  try {
-    await fetch(`${DB_BASE_URL}/matches/${targetName}.json`, {
-      method: 'PUT',
-      body: JSON.stringify(initialSchema)
-    })
-    alert(`🎉 [${targetName}] 채널이 성공적으로 개설되었습니다! 관중 뷰로 진입합니다.`)
-    router.push(`/match/${targetName}`)
-  } catch (err) {
-    alert('채널 생성 처리에 실패했습니다.')
-  }
-}
-
-// 3. 채널 진입
-const enterChannel = () => {
-  const targetName = String(channelName.value)
-
-  if (selectedRole.value === 'audience') {
-    router.push(`/match/${targetName}`)
-    return
-  }
-
-  if (!fetchedPasswords.value || !fetchedPasswords.value[selectedRole.value]) {
-    alert('암호 구조가 누락된 방입니다. 강제 입장 처리합니다.')
-    router.push(`/match/${targetName}/${selectedRole.value}`)
-    return
-  }
-
-  if (passwordInput.value === fetchedPasswords.value[selectedRole.value]) {
-    router.push(`/match/${targetName}/${selectedRole.value}`)
-  } else {
-    alert('❌ 비밀번호가 일치하지 않습니다. 다시 확인해 주세요!')
-  }
-}
-
-// 4. 파이어베이스에서 채널 삭제
-const deleteChannel = async () => {
-  if (!fetchedPasswords.value || passwordInput.value !== fetchedPasswords.value.manager) {
-    return alert('❌ 채널을 삭제하려면 올바른 [감독 비밀번호]를 입력해야 합니다.')
-  }
-
-  if (!confirm(`⚠️ 정말로 [${channelName.value}] 채널을 데이터베이스에서 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
-    return
-  }
-
-  try {
-    await fetch(`${DB_BASE_URL}/matches/${channelName.value}.json`, {
-      method: 'DELETE'
-    })
-    
-    alert(`🗑️ [${channelName.value}] 채널이 파이어베이스 DB에서 완전히 삭제되었습니다.`)
-    goBack()
-  } catch (err) {
-    console.error(err)
-    alert('채널 삭제 처리 중 통신 오류가 발생했습니다.')
-  }
+const formatTime = (seconds) => {
+  const mins = String(Math.floor(seconds / 60)).padStart(2, '0')
+  const secs = String(seconds % 60).padStart(2, '0')
+  return `${mins}:${secs}`
 }
 </script>
 
 <style scoped>
-.lobby-container { min-height: 100vh; background-color: #f1f5f9; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; font-family: -apple-system, sans-serif; }
-.lobby-header { text-align: center; margin-bottom: 24px; }
-.logo { font-size: 3.2rem; margin-bottom: 5px; }
-.lobby-header h1 { font-size: 1.4rem; color: #0f172a; margin: 0 0 6px 0; font-weight: 800; }
-.lobby-header .subtitle { font-size: 0.85rem; color: #64748b; margin: 0; }
+.match-container { width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #f0f2f5; overflow: hidden; box-sizing: border-box; padding: 10px; }
+.scoreboard-header { background: #1a2332; border-radius: 16px; padding: 12px 16px; color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 10px; }
+.top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.mode-badge { font-size: 0.75rem; background: rgba(255,255,255,0.15); padding: 4px 8px; border-radius: 6px; color: #cbd5e1; }
+.timer-display { font-size: 1.8rem; font-weight: bold; font-family: monospace; color: #ff4d6d; }
+.score-row { display: flex; align-items: center; justify-content: center; gap: 15px; }
+.team { display: flex; align-items: center; gap: 12px; }
+.team.home { justify-content: flex-end; flex: 1; }
+.team.away { justify-content: flex-start; flex: 1; }
+.name { font-size: 1.1rem; font-weight: bold; color: #94a3b8; text-transform: uppercase; }
+.score { font-size: 2.2rem; font-weight: 800; }
+.vs { font-size: 0.85rem; color: #475569; font-weight: bold; text-transform: uppercase; }
 
-.menu-selector-card { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 340px; }
-.btn-menu { width: 100%; padding: 20px 0; border: none; border-radius: 14px; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.06); transition: transform 0.1s; }
-.btn-menu:active { transform: scale(0.98); }
-.enter-mode { background: #1e293b; }
-.create-mode { background: #16a34a; }
+.pitch-container { flex: 1; background: white; border-radius: 16px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); overflow: hidden; padding: 6px; box-sizing: border-box; }
+.pitch { width: 100%; height: 100%; background: #2c4c38; border-radius: 12px; position: relative; border: 2px solid rgba(255,255,255,0.4); }
+.center-line { position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: rgba(255,255,255,0.4); }
+.center-circle { position: absolute; top: 50%; left: 50%; width: 70px; height: 70px; border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; transform: translate(-50%, -50%); }
 
-.lobby-card { background: white; border-radius: 18px; padding: 22px; width: 100%; max-width: 350px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); box-sizing: border-box; }
-.back-zone { margin-bottom: 15px; }
-.btn-back { background: none; border: none; color: #64748b; font-size: 0.8rem; font-weight: bold; cursor: pointer; padding: 0; }
+.player-token { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; transition: left 0.1s linear, top 0.1s linear; }
+.token-circle { width: 26px; height: 26px; background: #ff4d6d; border: 2px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+.token-name { font-size: 0.65rem; background: rgba(0,0,0,0.75); color: white; padding: 1px 4px; border-radius: 3px; margin-top: 2px; white-space: nowrap; }
 
-.input-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; width: 100%; box-sizing: border-box; }
-.input-group label { font-size: 0.8rem; font-weight: 700; color: #475569; }
-.search-box { display: flex; gap: 6px; width: 100%; }
-.search-box input { flex: 1; padding: 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.9rem; min-width: 0; font-weight: bold; }
-.normal-input { padding: 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.9rem; width: 100%; box-sizing: border-box; }
-.btn-primary { background: #2563eb; color: white; border: none; padding: 0 18px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
-.btn-primary:disabled { background: #cbd5e1; cursor: not-allowed; }
-
-.verified-zone { border-top: 1px dashed #e2e8f0; margin-top: 16px; padding-top: 16px; }
-.alert-msg { padding: 9px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; margin-bottom: 14px; text-align: center; }
-.alert-msg.success { background: #f0fdf4; color: #166534; }
-
-.role-selector { margin-bottom: 14px; }
-.role-btns { display: flex; gap: 5px; width: 100%; margin-top: 5px; }
-.role-btns button { flex: 1; padding: 10px 0; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 7px; font-size: 0.75rem; font-weight: bold; cursor: pointer; color: #475569; }
-.role-btns button.active { background: #0f172a; color: white; border-color: #0f172a; }
-
-.btn-action { width: 100%; padding: 13px 0; border: none; border-radius: 8px; font-weight: bold; font-size: 0.95rem; cursor: pointer; color: white; margin-top: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-.btn-action.enter { background-color: #0f172a; }
-.btn-action.create { background-color: #15803d; }
-
-.danger-zone { border-top: 1px solid #fee2e2; margin-top: 16px; padding-top: 12px; text-align: center; }
-.btn-delete-channel { width: 100%; background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 10px 0; border-radius: 8px; font-size: 0.8rem; font-weight: bold; cursor: pointer; }
-.btn-delete-channel:active { background: #fee2e2; }
+.loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: #f0f2f5; color: #64748b; font-size: 0.9rem; }
+.spinner { width: 30px; height: 30px; border: 3px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s infinite linear; margin-bottom: 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
