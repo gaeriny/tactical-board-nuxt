@@ -78,25 +78,27 @@ const newChannelPasswords = reactive({
 
 const fetchedPasswords = ref(null)
 
-// 1. 단발성 데이터 조회 핸들러 (조건 검증 고도화)
+// 1. 단발성 데이터 조회 핸들러 (캐시 파괴 및 엄격한 검증)
 const checkChannelExistence = async () => {
   if (!channelName.value) return alert('채널명을 입력해 주세요!')
   
-  // 상태 초기화
+  // 조회 시작 전 화면 초기화
   channelStatus.value = ''
   fetchedPasswords.value = null
+  passwordInput.value = ''
 
   try {
-    const response = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`)
+    // 💡 [핵심 교정 1]: URL 뒤에 타임스탬프(?_cb=시간)를 붙여 브라우저와 Vercel의 강제 캐싱을 원천 붕괴시킵니다.
+    const cacheBuster = Date.now()
+    const response = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json?_cb=${cacheBuster}`)
     const data = await response.json()
     
-    // 💡 [핵심 교정]: data가 null이거나, "null" 문자열이거나, 빈 객체({})인 경우를 모두 체크하여 '새 방'으로 판별합니다.
-    if (data && data !== 'null' && Object.keys(data).length > 0) {
-      // 진짜로 서버에 데이터 덩어리가 존재할 때만 기존 방으로 인정
+    // 💡 [핵심 교정 2]: 단순히 data가 있는지만 보지 않고, 내부 핵심 속성(scores, currentSport, passwords) 중 하나라도 확실히 유효한지 검사합니다.
+    if (data && data !== 'null' && (data.currentSport || data.scores || data.passwords)) {
       fetchedPasswords.value = data.passwords || null
       channelStatus.value = 'exists'
     } else {
-      // 파이어베이스에 데이터가 없거나 비어있으면 확실하게 신규 개설 모드로 전환
+      // 찌꺼기 데이터가 오거나 null이면 무조건 완전히 새로운 방으로 취급합니다.
       channelStatus.value = 'new'
     }
   } catch (err) {
@@ -128,7 +130,9 @@ const createNewChannel = async () => {
       body: JSON.stringify(initialSchema)
     })
     
-    alert(`🎉 [${channelName.value}] 채널이 개설되었습니다! 관중 모드로 입장합니다.`)
+    alert(`🎉 [${channelName.value}] 채널이 개설되었습니다! 감독/심판 뷰 진입 시 설정한 암호를 사용하세요.`)
+    // 생성 완료 후 입력 폼 초기화 및 관중 전송
+    channelStatus.value = ''
     router.push(`/match/${channelName.value}`)
   } catch (err) {
     alert('채널 생성 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.')
