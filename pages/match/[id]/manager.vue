@@ -1,5 +1,5 @@
 <template>
-  <div class="match-container" v-if="matchData">
+  <div class="match-container" v-if="matchData && Object.keys(matchData).length > 0">
     <header class="scoreboard-header">
       <div class="top-row">
         <span class="mode-badge">📋 감독 전술 제어: {{ matchId }}</span>
@@ -24,17 +24,25 @@
       <button @click="clearPlayers" class="btn-gray">🗑️ 선수 전체 초기화</button>
     </section>
 
-    <main class="pitch-container" @mousemove="dragPlayer" @mouseup="stopDrag" @mouseleave="stopDrag">
+    <main 
+      class="pitch-container" 
+      @mousemove="dragPlayer" 
+      @mouseup="stopDrag" 
+      @mouseleave="stopDrag"
+      @touchmove="dragPlayerTouch"
+      @touchend="stopDrag"
+    >
       <div class="pitch" ref="pitchRef">
         <div class="center-line"></div>
         <div class="center-circle"></div>
         
         <div 
-          v-for="(player, index) in matchData.players" 
+          v-for="(player, index) in matchData.players || []" 
           :key="player.id"
           class="player-token"
-          :style="{ left: player.x + '%', top: player.y + '%' }"
+          :style="{ left: (player.x ?? 50) + '%', top: (player.y ?? 50) + '%' }"
           @mousedown="startDrag($event, index)"
+          @touchstart="startDragTouch($event, index)"
         >
           <div class="token-circle">{{ player.number || (index + 1) }}</div>
           <input 
@@ -44,11 +52,16 @@
             class="name-edit-input"
             placeholder="이름"
             @mousedown.stop
+            @touchstart.stop
           />
-          <button class="btn-del" @mousedown.stop @click="deletePlayer(index)">×</button>
+          <button class="btn-del" @mousedown.stop @touchstart.stop @click="deletePlayer(index)">×</button>
         </div>
       </div>
     </main>
+  </div>
+  <div v-else class="loading-state">
+    <div class="spinner"></div>
+    <p>감독 제어 대시보드를 구축 중입니다...</p>
   </div>
 </template>
 
@@ -88,6 +101,7 @@ const addPlayer = () => {
 }
 
 const deletePlayer = (index) => {
+  if (!matchData.value?.players) return
   matchData.value.players.splice(index, 1)
   saveChanges()
 }
@@ -100,19 +114,36 @@ const clearPlayers = () => {
   }
 }
 
+// 마우스 드래그 핸들러
 const startDrag = (e, index) => { activeIndex = index }
 const dragPlayer = (e) => {
   if (activeIndex === null || !pitchRef.value) return
   const rect = pitchRef.value.getBoundingClientRect()
-  let x = ((e.clientX - rect.left) / rect.width) * 100
-  let y = ((e.clientY - rect.top) / rect.height) * 100
+  updateCoordinates(e.clientX, e.clientY, rect)
+}
+
+// 모바일 터치 드래그 핸들러 추가
+const startDragTouch = (e, index) => { activeIndex = index }
+const dragPlayerTouch = (e) => {
+  if (activeIndex === null || !pitchRef.value) return
+  const rect = pitchRef.value.getBoundingClientRect()
+  const touch = e.touches[0]
+  updateCoordinates(touch.clientX, touch.clientY, rect)
+}
+
+const updateCoordinates = (clientX, clientY, rect) => {
+  let x = ((clientX - rect.left) / rect.width) * 100
+  let y = ((clientY - rect.top) / rect.height) * 100
 
   if (x < 3) x = 3; if (x > 97) x = 97
   if (y < 3) y = 3; if (y > 97) y = 97
 
-  matchData.value.players[activeIndex].x = Math.round(x)
-  matchData.value.players[activeIndex].y = Math.round(y)
+  if (matchData.value?.players?.[activeIndex]) {
+    matchData.value.players[activeIndex].x = Math.round(x)
+    matchData.value.players[activeIndex].y = Math.round(y)
+  }
 }
+
 const stopDrag = () => {
   if (activeIndex !== null) { activeIndex = null; saveChanges(); }
 }
@@ -132,7 +163,6 @@ const stopDrag = () => {
 .score { font-size: 2.2rem; font-weight: 800; }
 .vs { font-size: 0.85rem; color: #475569; font-weight: bold; }
 
-/* 🛠️ 버튼 툴바 스크린샷 10번 복사 */
 .toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
 .toolbar button { flex: 1; padding: 10px 0; border: none; border-radius: 8px; font-weight: bold; font-size: 0.85rem; cursor: pointer; }
 .btn-blue { background: #3b82f6; color: white; }
@@ -143,8 +173,12 @@ const stopDrag = () => {
 .center-line { position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: rgba(255,255,255,0.4); }
 .center-circle { position: absolute; top: 50%; left: 50%; width: 70px; height: 70px; border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; transform: translate(-50%, -50%); }
 
-.player-token { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; cursor: grab; }
+.player-token { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; cursor: grab; touch-action: none; }
 .token-circle { width: 26px; height: 26px; background: #3b82f6; border: 2px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 .name-edit-input { width: 50px; background: rgba(0,0,0,0.8); border: none; color: white; font-size: 0.65rem; text-align: center; border-radius: 3px; margin-top: 2px; padding: 1px 0; }
 .btn-del { position: absolute; top: -5px; right: -5px; width: 14px; height: 14px; background: #ef4444; color: white; border: none; border-radius: 50%; font-size: 0.6rem; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+
+.loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: #f0f2f5; color: #64748b; font-size: 0.9rem; }
+.spinner { width: 30px; height: 30px; border: 3px solid #cbd5e1; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s infinite linear; margin-bottom: 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
