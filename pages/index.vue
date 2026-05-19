@@ -64,7 +64,6 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { useNuxtApp } from '#app'
 
 const router = useRouter()
 const channelName = ref('')
@@ -77,31 +76,32 @@ const newChannelPasswords = reactive({
   referee: ''
 })
 
-// 파이어베이스에서 조회해온 실제 비밀번호 데이터를 임시 보관할 곳
 const fetchedPasswords = ref(null)
 
-// 1. 단발성 데이터 조회 핸들러 (컴포저블 의존성 완전 제거)
+// 1. 단발성 데이터 조회 핸들러 (조건 검증 고도화)
 const checkChannelExistence = async () => {
   if (!channelName.value) return alert('채널명을 입력해 주세요!')
   
+  // 상태 초기화
+  channelStatus.value = ''
+  fetchedPasswords.value = null
+
   try {
-    // 💡 프로젝트 내 플러그인에 세팅된 단발성 데이터 조회 Fetch 기능 활용
-    // 만약 프로젝트 전역 fetch 에러 발생 시를 대비해 안전하게 구조화
     const response = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`)
     const data = await response.json()
     
-    if (data) {
-      // 이미 존재하는 방이라면 내부에 패스워드 정보 등이 들어있음
+    // 💡 [핵심 교정]: data가 null이거나, "null" 문자열이거나, 빈 객체({})인 경우를 모두 체크하여 '새 방'으로 판별합니다.
+    if (data && data !== 'null' && Object.keys(data).length > 0) {
+      // 진짜로 서버에 데이터 덩어리가 존재할 때만 기존 방으로 인정
       fetchedPasswords.value = data.passwords || null
       channelStatus.value = 'exists'
     } else {
+      // 파이어베이스에 데이터가 없거나 비어있으면 확실하게 신규 개설 모드로 전환
       channelStatus.value = 'new'
     }
   } catch (err) {
     console.error(err)
-    // 안전장치: 어떤 이유로든 조회가 막히면 튕구지 않고 사용자가 다이렉트로 주소를 치고 들어갈 수 있게 안내
-    alert('실시간 채널 조회에 일시적인 제한이 있습니다. 입력하신 채널로 직접 진입합니다.')
-    router.push(`/match/${channelName.value}`)
+    alert('채널 확인 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.')
   }
 }
 
@@ -123,7 +123,6 @@ const createNewChannel = async () => {
   }
 
   try {
-    // REST API 방식을 사용하여 의존성 라이브러리 버그를 100% 우회하여 전송
     await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`, {
       method: 'PUT',
       body: JSON.stringify(initialSchema)
