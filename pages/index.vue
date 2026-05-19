@@ -78,27 +78,27 @@ const newChannelPasswords = reactive({
 
 const fetchedPasswords = ref(null)
 
-// 1. 단발성 데이터 조회 핸들러 (캐시 파괴 및 엄격한 검증)
+// 1. 단발성 데이터 조회 핸들러 (서버/브라우저 실시간 캐시 강제 파괴)
 const checkChannelExistence = async () => {
   if (!channelName.value) return alert('채널명을 입력해 주세요!')
   
-  // 조회 시작 전 화면 초기화
+  // 조회 시작 시 폼 상태 및 에러 방지용 초기화
   channelStatus.value = ''
   fetchedPasswords.value = null
   passwordInput.value = ''
 
   try {
-    // 💡 [핵심 교정 1]: URL 뒤에 타임스탬프(?_cb=시간)를 붙여 브라우저와 Vercel의 강제 캐싱을 원천 붕괴시킵니다.
+    // URL 뒤에 매번 바뀌는 타임스탬프(?_cb=시간)를 강제로 탑재하여 캐시 유실 버그 원천 파괴
     const cacheBuster = Date.now()
     const response = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json?_cb=${cacheBuster}`)
     const data = await response.json()
     
-    // 💡 [핵심 교정 2]: 단순히 data가 있는지만 보지 않고, 내부 핵심 속성(scores, currentSport, passwords) 중 하나라도 확실히 유효한지 검사합니다.
+    // 데이터 찌꺼기나 빈 객체가 아닌, 전술 대시보드의 필수 필드 데이터가 박혀있는지 정밀 감지
     if (data && data !== 'null' && (data.currentSport || data.scores || data.passwords)) {
       fetchedPasswords.value = data.passwords || null
       channelStatus.value = 'exists'
     } else {
-      // 찌꺼기 데이터가 오거나 null이면 무조건 완전히 새로운 방으로 취급합니다.
+      // 서버상에 깨끗하게 비어있는 주소일 때 비로소 완전히 신규 방으로 인식
       channelStatus.value = 'new'
     }
   } catch (err) {
@@ -107,12 +107,13 @@ const checkChannelExistence = async () => {
   }
 }
 
-// 2. 신규 채널 생성 로직
+// 2. 신규 채널 생성 및 1분 뒤 자동 소멸 타이머 가동 로직
 const createNewChannel = async () => {
   if (!newChannelPasswords.manager || !newChannelPasswords.referee) {
     return alert('감독 및 심판 비밀번호를 모두 지정해야 채널 개설이 가능합니다!')
   }
 
+  // 초기 스키마 템플릿
   const initialSchema = {
     currentSport: 'soccer',
     scores: { home: 0, away: 0 },
@@ -124,17 +125,36 @@ const createNewChannel = async () => {
     }
   }
 
+  // 타임아웃 블록 안에서도 생성했던 채널명을 고정 타겟팅하기 위해 변수 홀딩
+  const targetChannel = channelName.value
+
   try {
-    await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`, {
+    // 찌꺼기 방 데이터가 있었더라도 무조건 완전히 초기 템플릿 구조로 덮어씌웁니다.
+    await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${targetChannel}.json`, {
       method: 'PUT',
       body: JSON.stringify(initialSchema)
     })
     
-    alert(`🎉 [${channelName.value}] 채널이 개설되었습니다! 감독/심판 뷰 진입 시 설정한 암호를 사용하세요.`)
-    // 생성 완료 후 입력 폼 초기화 및 관중 전송
+    alert(`🎉 [${targetChannel}] 채널이 안전하게 생성되었습니다.\n⚠️ 테스트 모드: 이 채널은 정확히 '1분 후' 데이터베이스에서 자동 삭제됩니다.`)
+    
+    // 개설 처리 후 로비 입력 상태 세팅 리셋 및 관중 뷰 화면으로 자동 리다이렉트
     channelStatus.value = ''
-    router.push(`/match/${channelName.value}`)
+    router.push(`/match/${targetChannel}`)
+
+    // ⏳ [테스트 기능]: 생성된 시점부터 60초(60,000ms) 카운트다운 후 Firebase DELETE REST API 구동
+    setTimeout(async () => {
+      try {
+        await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${targetChannel}.json`, {
+          method: 'DELETE'
+        })
+        console.log(`🗑️ [자동 청소 시스템]: 테스트용 채널 [${targetChannel}]이 1분이 경과하여 소멸되었습니다.`);
+      } catch (deleteErr) {
+        console.error('테스트 채널 자동 삭제 중 장애 발생:', deleteErr)
+      }
+    }, 60000)
+
   } catch (err) {
+    console.error(err)
     alert('채널 생성 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.')
   }
 }
