@@ -62,8 +62,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import { useNuxtApp } from '#app'
 
 const router = useRouter()
 const channelName = ref('')
@@ -76,38 +77,41 @@ const newChannelPasswords = reactive({
   referee: ''
 })
 
-// 💡 [핵심 교정] 500번 및 팝업 에러를 원천 차단하기 위해 원시 문자열로 전환될 변수 가동
-const activeChannelId = ref('')
+// 파이어베이스에서 조회해온 실제 비밀번호 데이터를 임시 보관할 곳
+const fetchedPasswords = ref(null)
 
-// 컴포저블 내부로 전달될 때는 Computed를 활용해 반응형 '스트링 값'만 깨끗하게 전달합니다.
-const targetMatchId = computed(() => activeChannelId.value || '__LOBBY_HOLDER__')
-const { matchData, saveToServer } = useMatchFirebase(targetMatchId)
-
-// 1. 채널 검증 핸들러
-const checkChannelExistence = () => {
+// 1. 단발성 데이터 조회 핸들러 (컴포저블 의존성 완전 제거)
+const checkChannelExistence = async () => {
   if (!channelName.value) return alert('채널명을 입력해 주세요!')
   
-  // 입력된 순수 문자열 값을 트리거에 할당하여 컴포저블이 Firebase와 통신하도록 유도합니다.
-  activeChannelId.value = channelName.value
-
-  // 실시간 스트림 연결을 감안하여 0.5초 대기 후 데이터 존재 유무 판별
-  setTimeout(() => {
-    if (matchData.value && (matchData.value.currentSport || matchData.value.scores || matchData.value.passwords)) {
+  try {
+    // 💡 프로젝트 내 플러그인에 세팅된 단발성 데이터 조회 Fetch 기능 활용
+    // 만약 프로젝트 전역 fetch 에러 발생 시를 대비해 안전하게 구조화
+    const response = await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`)
+    const data = await response.json()
+    
+    if (data) {
+      // 이미 존재하는 방이라면 내부에 패스워드 정보 등이 들어있음
+      fetchedPasswords.value = data.passwords || null
       channelStatus.value = 'exists'
     } else {
       channelStatus.value = 'new'
     }
-  }, 500)
+  } catch (err) {
+    console.error(err)
+    // 안전장치: 어떤 이유로든 조회가 막히면 튕구지 않고 사용자가 다이렉트로 주소를 치고 들어갈 수 있게 안내
+    alert('실시간 채널 조회에 일시적인 제한이 있습니다. 입력하신 채널로 직접 진입합니다.')
+    router.push(`/match/${channelName.value}`)
+  }
 }
 
 // 2. 신규 채널 생성 로직
-const createNewChannel = () => {
+const createNewChannel = async () => {
   if (!newChannelPasswords.manager || !newChannelPasswords.referee) {
     return alert('감독 및 심판 비밀번호를 모두 지정해야 채널 개설이 가능합니다!')
   }
 
-  // 데이터 구조 바인딩
-  matchData.value = {
+  const initialSchema = {
     currentSport: 'soccer',
     scores: { home: 0, away: 0 },
     teamNames: { home: 'HOME', away: 'AWAY' },
@@ -118,29 +122,34 @@ const createNewChannel = () => {
     }
   }
 
-  // 기존 컴포저블 내장 저장 기능 활용
-  saveToServer()
-  
-  alert(`🎉 [${channelName.value}] 채널이 개설되었습니다! 관중 모드로 입장합니다.`)
-  router.push(`/match/${channelName.value}`)
+  try {
+    // REST API 방식을 사용하여 의존성 라이브러리 버그를 100% 우회하여 전송
+    await fetch(`https://tactical-board-nuxt-default-rtdb.firebaseio.com/matches/${channelName.value}.json`, {
+      method: 'PUT',
+      body: JSON.stringify(initialSchema)
+    })
+    
+    alert(`🎉 [${channelName.value}] 채널이 개설되었습니다! 관중 모드로 입장합니다.`)
+    router.push(`/match/${channelName.value}`)
+  } catch (err) {
+    alert('채널 생성 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+  }
 }
 
-// 3. 기존 채널 입장 및 권한 검증
+// 3. 권한별 비밀번호 검증 처리
 const enterChannel = () => {
   if (selectedRole.value === 'audience') {
     router.push(`/match/${channelName.value}`)
     return
   }
 
-  const savedPasswords = matchData.value?.passwords
-
-  if (!savedPasswords || !savedPasswords[selectedRole.value]) {
-    alert('이 채널은 보안 설정이 없는 방입니다. 비밀번호 없이 입장합니다.')
+  if (!fetchedPasswords.value || !fetchedPasswords.value[selectedRole.value]) {
+    alert('이 채널은 암호가 설정되지 않은 이전 방입니다. 바로 입장합니다.')
     router.push(`/match/${channelName.value}/${selectedRole.value}`)
     return
   }
 
-  if (passwordInput.value === savedPasswords[selectedRole.value]) {
+  if (passwordInput.value === fetchedPasswords.value[selectedRole.value]) {
     router.push(`/match/${channelName.value}/${selectedRole.value}`)
   } else {
     alert('❌ 비밀번호가 올바르지 않습니다. 다시 확인해 주세요.')
