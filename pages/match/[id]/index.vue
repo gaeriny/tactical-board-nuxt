@@ -1,5 +1,5 @@
 <template>
-  <div class="match-container" v-if="matchData">
+  <div class="match-container" v-if="matchData && Object.keys(matchData).length > 0">
     <header class="scoreboard-header">
       <div class="top-row">
         <span class="mode-badge">📺 관중 모드: {{ matchId }}</span>
@@ -25,16 +25,20 @@
         <div class="center-circle"></div>
         
         <div 
-          v-for="player in matchData.players" 
+          v-for="player in matchData.players || []" 
           :key="player.id"
           class="player-token"
-          :style="{ left: player.x + '%', top: player.y + '%' }"
+          :style="{ left: (player.x ?? 50) + '%', top: (player.y ?? 50) + '%' }"
         >
-          <div class="token-circle">{{ player.number }}</div>
-          <div class="token-name">{{ player.name }}</div>
+          <div class="token-circle">{{ player.number || '?' }}</div>
+          <div class="token-name">{{ player.name || '선수' }}</div>
         </div>
       </div>
     </main>
+  </div>
+  <div v-else class="loading-state">
+    <div class="spinner"></div>
+    <p>실시간 전술 보드 데이터를 가져오고 있습니다...</p>
   </div>
 </template>
 
@@ -66,14 +70,16 @@ const formatTime = (seconds) => {
 .score { font-size: 2.2rem; font-weight: 800; }
 .vs { font-size: 0.85rem; color: #475569; font-weight: bold; text-transform: uppercase; }
 
-/* 스마트폰 꽉 차는 세로 경기장 */
 .pitch-container { flex: 1; background: white; border-radius: 16px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); overflow: hidden; padding: 6px; box-sizing: border-box; }
 .pitch { width: 100%; height: 100%; background: #2c4c38; border-radius: 12px; position: relative; border: 2px solid rgba(255,255,255,0.4); }
 .center-line { position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: rgba(255,255,255,0.4); }
 .center-circle { position: absolute; top: 50%; left: 50%; width: 70px; height: 70px; border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; transform: translate(-50%, -50%); }
 
-/* 선수 토큰 */
-.player-token { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; }
+.player-token { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; transition: left 0.1s linear, top 0.1s linear; }
 .token-circle { width: 26px; height: 26px; background: #ff4d6d; border: 2px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 .token-name { font-size: 0.65rem; background: rgba(0,0,0,0.75); color: white; padding: 1px 4px; border-radius: 3px; margin-top: 2px; white-space: nowrap; }
+
+.loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: #f0f2f5; color: #64748b; font-size: 0.9rem; }
+.spinner { width: 30px; height: 30px; border: 3px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s infinite linear; margin-bottom: 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
