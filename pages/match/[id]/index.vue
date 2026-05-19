@@ -1,20 +1,20 @@
 <template>
-  <div class="match-container" v-if="matchData && Object.keys(matchData).length > 0">
+  <div class="match-container">
     <header class="scoreboard-header">
       <div class="top-row">
         <span class="mode-badge">📺 관중 모드: {{ matchId }}</span>
-        <div class="timer-display">{{ formatTime(matchData.timer || 0) }}</div>
+        <div class="timer-display">{{ formatTime(matchData?.timer || 0) }}</div>
       </div>
       
       <div class="score-row">
         <div class="team home">
-          <span class="name">{{ matchData.teamNames?.home || 'HOME' }}</span>
-          <span class="score">{{ matchData.scores?.home || 0 }}</span>
+          <span class="name">{{ matchData?.teamNames?.home || 'HOME' }}</span>
+          <span class="score">{{ matchData?.scores?.home || 0 }}</span>
         </div>
         <div class="vs">vs</div>
         <div class="team away">
-          <span class="score">{{ matchData.scores?.away || 0 }}</span>
-          <span class="name">{{ matchData.teamNames?.away || 'AWAY' }}</span>
+          <span class="score">{{ matchData?.scores?.away || 0 }}</span>
+          <span class="name">{{ matchData?.teamNames?.away || 'AWAY' }}</span>
         </div>
       </div>
     </header>
@@ -25,7 +25,7 @@
         <div class="center-circle"></div>
         
         <div 
-          v-for="player in matchData.players || []" 
+          v-for="player in matchData?.players || []" 
           :key="player.id"
           class="player-token"
           :style="{ left: (player.x ?? 50) + '%', top: (player.y ?? 50) + '%' }"
@@ -35,10 +35,10 @@
         </div>
       </div>
     </main>
-  </div>
-  <div v-else class="loading-state">
-    <div class="spinner"></div>
-    <p>실시간 전술 보드 데이터를 가져오고 있습니다...</p>
+
+    <div v-if="!matchData" class="mini-loading-bar">
+      📡 실시간 데이터를 동기화 중입니다...
+    </div>
   </div>
 </template>
 
@@ -57,7 +57,7 @@ const formatTime = (seconds) => {
 </script>
 
 <style scoped>
-.match-container { width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #f0f2f5; overflow: hidden; box-sizing: border-box; padding: 10px; }
+.match-container { width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #f0f2f5; overflow: hidden; box-sizing: border-box; padding: 10px; position: relative; }
 .scoreboard-header { background: #1a2332; border-radius: 16px; padding: 12px 16px; color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); margin-bottom: 10px; }
 .top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
 .mode-badge { font-size: 0.75rem; background: rgba(255,255,255,0.15); padding: 4px 8px; border-radius: 6px; color: #cbd5e1; }
@@ -79,7 +79,5 @@ const formatTime = (seconds) => {
 .token-circle { width: 26px; height: 26px; background: #ff4d6d; border: 2px solid white; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 .token-name { font-size: 0.65rem; background: rgba(0,0,0,0.75); color: white; padding: 1px 4px; border-radius: 3px; margin-top: 2px; white-space: nowrap; }
 
-.loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: #f0f2f5; color: #64748b; font-size: 0.9rem; }
-.spinner { width: 30px; height: 30px; border: 3px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s infinite linear; margin-bottom: 12px; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.mini-loading-bar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.8); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.8rem; pointer-events: none; z-index: 10; }
 </style>
