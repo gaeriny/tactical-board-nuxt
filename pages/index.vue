@@ -62,8 +62,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+// 💡 빌드 실패 원인인 패키지 의존성을 완전히 피하기 위해 Firebase SDK 직접 추출 방식을 안전하게 채택합니다.
+import { getDatabase, ref as dbRef, get, set } from 'firebase/database'
 
 const router = useRouter()
 const channelName = ref('')
@@ -76,35 +78,38 @@ const newChannelPasswords = reactive({
   referee: ''
 })
 
-// 💡 [핵심 교정] 기존 시스템인 useMatchFirebase를 동적으로 활용하기 위해 정의
-const currentChannelId = ref('')
-const { matchData, saveToServer } = useMatchFirebase(currentChannelId)
+// 기존 방 패스워드를 임시 임포트 보관할 변수
+const fetchedPasswords = ref(null)
 
-// 채널 이름을 새로 조회할 때마다 Firebase 리스너를 동적으로 스위칭합니다.
-const checkChannelExistence = () => {
+// 1. 입력한 채널 명으로 방이 존재하는지 단발성 조회 (빌드 오류 100% 방지)
+const checkChannelExistence = async () => {
   if (!channelName.value) return alert('채널명을 입력해 주세요!')
   
-  // 현재 입력한 채널 ID를 useMatchFirebase에 주입하여 데이터를 실시간으로 가져옵니다.
-  currentChannelId.value = channelName.value
-
-  // 데이터가 로드되는 시점을 캐치하기 위해 잠시 대기 후 검사 (Firebase 연결 확인)
-  setTimeout(() => {
-    if (matchData.value && (matchData.value.currentSport || matchData.value.passwords)) {
+  try {
+    const db = getDatabase()
+    const snapshot = await get(dbRef(db, `matches/${channelName.value}`))
+    
+    if (snapshot.exists()) {
+      const data = snapshot.val()
+      // 패스워드 메타데이터가 있으면 저장해둠
+      fetchedPasswords.value = data.passwords || null
       channelStatus.value = 'exists'
     } else {
       channelStatus.value = 'new'
     }
-  }, 600)
+  } catch (err) {
+    console.error(err)
+    alert('채널 확인 중 오류가 발생했습니다. Firebase 설정을 확인해 주세요.')
+  }
 }
 
-// 새 채널 개설 로직
-const createNewChannel = () => {
+// 2. 신규 채널 생성 로직
+const createNewChannel = async () => {
   if (!newChannelPasswords.manager || !newChannelPasswords.referee) {
     return alert('감독 및 심판 비밀번호를 모두 지정해야 채널 개설이 가능합니다!')
   }
 
-  // 기존 구조와 완벽히 일치하는 초기 스키마 구성 및 비밀번호 내재화
-  matchData.value = {
+  const initialSchema = {
     currentSport: 'soccer',
     scores: { home: 0, away: 0 },
     teamNames: { home: 'HOME', away: 'AWAY' },
@@ -115,31 +120,32 @@ const createNewChannel = () => {
     }
   }
 
-  // 기존 컴포저블의 내장 함수를 사용해 안전하게 Firebase에 저장합니다.
-  saveToServer()
-  
-  alert(`🎉 [${channelName.value}] 채널이 성공적으로 개설되었습니다! 관중 모드로 자동 진입합니다.`)
-  router.push(`/match/${channelName.value}`)
+  try {
+    const db = getDatabase()
+    await set(dbRef(db, `matches/${channelName.value}`), initialSchema)
+    alert(`🎉 [${channelName.value}] 채널이 개설되었습니다! 관중 모드로 진입합니다.`)
+    router.push(`/match/${channelName.value}`)
+  } catch (err) {
+    alert('채널 개설 실패: ' + err.message)
+  }
 }
 
-// 기존 채널 검증 후 입장 로직
+// 3. 기존 채널 비밀번호 검증 및 비밀번호 기반 입장 핸들러
 const enterChannel = () => {
   if (selectedRole.value === 'audience') {
     router.push(`/match/${channelName.value}`)
     return
   }
 
-  const savedPasswords = matchData.value?.passwords
-
-  if (!savedPasswords || !savedPasswords[selectedRole.value]) {
-    // 만약 예전에 만든 방이라 비밀번호 데이터가 아예 없다면 프리패스로 진입 허용 처리
-    alert('이 채널은 초기 보안 설정이 없는 방입니다. 바로 진입합니다.')
+  // 예전에 생성되어 비밀번호가 등록되어있지 않은 채널 구제 조치
+  if (!fetchedPasswords.value || !fetchedPasswords.value[selectedRole.value]) {
+    alert('이 채널은 초기 보안 암호가 없는 방입니다. 바로 입장합니다.')
     router.push(`/match/${channelName.value}/${selectedRole.value}`)
     return
   }
 
-  // 비밀번호 일치 여부 확인
-  if (passwordInput.value === savedPasswords[selectedRole.value]) {
+  // 비밀번호 대조
+  if (passwordInput.value === fetchedPasswords.value[selectedRole.value]) {
     router.push(`/match/${channelName.value}/${selectedRole.value}`)
   } else {
     alert('❌ 비밀번호가 올바르지 않습니다. 다시 확인해 주세요.')
@@ -165,4 +171,21 @@ const enterChannel = () => {
 .status-zone { border-top: 1px dashed #e0e0e0; margin-top: 20px; padding-top: 20px; }
 .alert-msg { padding: 10px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; margin-bottom: 16px; text-align: center; }
 .alert-msg.success { background: #e8f5e9; color: #2e7d32; }
-.alert-msg.info { background: #e3f2fd; color: #0d
+.alert-msg.info { background: #e3f2fd; color: #0d47a1; }
+
+.role-selector { margin-bottom: 16px; }
+.role-selector label { font-size: 0.8rem; font-weight: bold; color: #444; display: block; margin-bottom: 6px; }
+.role-btns { display: flex; gap: 6px; width: 100%; }
+.role-btns button { flex: 1; padding: 10px 0; border: 1px solid #ddd; background: #f9f9f9; border-radius: 8px; font-size: 0.8rem; font-weight: bold; cursor: pointer; color: #555; }
+.role-btns button.active { background: #333; color: white; border-color: #333; }
+
+.password-group input { padding: 11px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.9rem; }
+
+.btn-action { width: 100%; padding: 14px 0; border: none; border-radius: 8px; font-weight: bold; font-size: 0.95rem; cursor: pointer; color: white; margin-top: 10px; }
+.btn-action.enter { background-color: #222; }
+.btn-action.create { background-color: #2e7d32; }
+.btn-action:active { transform: scale(0.99); opacity: 0.9; }
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+</style>
